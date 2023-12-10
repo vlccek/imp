@@ -1,0 +1,79 @@
+ 
+\documentclass{article}
+
+\usepackage[czech]{babel}
+\usepackage{amsmath}
+\usepackage[a4paper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[czech]{babel}
+\usepackage{datetime}
+\usepackage{hyperref}
+
+\title{Projekt do předmětu IMP - Š - ESP32 či jiný HW: Digitální FM rádio \\ (modul RDA5807M a zesilovač PAM8407)}
+
+\author{Jakub Vlk}
+\date{\today}
+
+\begin{document}
+	
+	\maketitle
+	\newpage
+	
+	\section{Úvod}
+	Tato dokumentace slouží k popisu výsledné implementace projektu zaměřeného na realizaci digitálního FM rádia s využitím vývojového kitu na bázi SoC ESP32, modulu FM přijímače RDA5807M a modulu audio zesilovače PAM8407.
+	
+	\subsection{Popis projektu}
+	
+	Na displeji je možné pomocí rotačního enkodéru procházet mezi %TODO
+	
+	Cílem tohoto projektu je vytvořit funkční digitální FM rádio, které umožní uživatelům naladit a poslouchat rádiové stanice prostřednictvím minimalistického rozhraní na displeji. Další možností ovládání je ovládání skrze webové rozhraní. Uživatelské rozhraní bude možné procházet pomocí rotačního enkodéru.
+	
+	\subsection{Zapojení}
+	Displej je připojen k SoC pomocí rozhraní SPI. Samotný rádiový přijímač RDA5807M je připojen pomocí rozhraní I2C ke SoC pro ladění a nastavování dalších parametrů rádiového přijímače. Rotační enkodér je připojen ke zbývajícím volným GPIO pinům, které byly přenastaveny tak, aby odpovídaly požadavkům enkodéru. Audio zesilovač byl zapojen přímo k FM přijímači a napájení. Samotný audio zesilovač není mimo napájení připojen k SoC. Tyto piny jsou konfigurovatelné v souboru \texttt{settings.hpp}.
+	
+	
+	\section{Rozhraní}
+	\subsection{Webové rozhraní}
+	Z webového rozhraní je možné pohodlně ovládat rádio na velkou vzdálenost. Stačí, aby systém byl připojen k wi-fi síti. Potom je na adrese systému na portu 80 možno načíst webovou stránku s ovládacími prvky. Ve webovém rozhraní je možné měnit zvolenou stanici, nastavovat hlasitost a zapnout a vypnout funkci "bassboost".
+	
+	\subsection{Displej}
+	Na displeji je možné procházet mezi 3 záložkami -- \textbf{Radio}, \textbf{Favorite} a \textbf{Volume}. V záložce Radio je možné ručně naladit konkrétní frekvenci. Záložka Favorite je určena k procházení mezi 10 přednastavenými oblíbenými stanicemi. V poslední záložce Volume je možné nastavovat hlasitost. Vybraná záložka je indikována velkými písmeny ve slově, které tuto záložku reprezentuje. 
+	
+	\section{Implementace}
+	\subsection{Zapínání radia}
+	Po zapnutí systému proběhne inicializace všech komponent. V této fázi jsou nastaveny porty GPIO tak, aby odpovídaly zapojení komponent. Rovněž jsou vytvořeny objekty pro práci s danými komponentami, jako je displej nebo rádio, a také abstraktní komponenty, jako je například menu. Dále se systém připojí k wi-fi síti (parametry jsou definovány v souboru \texttt{settings.hpp}) a následně je inicializován webový server. 
+	
+	\subsection{Hlavní smyčka programu}
+	V těle programu se nachází jen dvě neelementární operace: vykreslení menu a funkce realizující obsluhu webového serveru. Vykreslení menu je více popsáno v sekci \ref{menu}. O implementaci webového rozhraní se píše v sekci \ref{web}.
+	
+	
+	\subsection{Enkodér}
+	Ovládaní enkodéru je realizováno bez použití knihovny pomocí obsluhy přerušení. Enkodér může vygenerovat dva druhy přerušení. Prvním je stisknutí tlačítka, což systém interpretuje jako potvrzení nebo vracení zpět a následně detekci otáčení. Směr otáčení se určí podle předchozí hodnoty v jednom z registrů. Po detekci otáčení je zavolána jedna ze dvou metod, a to buď pro točení doprava nebo doleva. Třída \emph{menu} toto otáčení interpretuje -- buď jako pohyb mezi záložkami v menu nebo jako inkrementaci či dekrementaci hodnot v jednotlivých záložkách. Taktéž je nastaven příznak \verb|update|, aby se menu vykreslilo pozměněné. 
+	
+	\subsection{Menu}
+	\label{menu}
+	Menu vytváří abstrakci nad směsí textu, čísel a čar zobrazovaných v displeji. Menu si udržuje odkaz jak na displej, tak na rádio a překládá pokyny zadané uživatelem -- jak z enkodérum tak z webového rozhraní -- na displej, ale zároveň i na rádio. Menu pracuje, tak že vygenerované přerušení změní vnitřní stav objektu třídy \emph{menu} a nastaví příznak potřeby překreslení. Samotné přerušení neprovede znovuvykreslení -- to je realizováno až v hlavní smyčce programu při zavolání funkce pro překreslení, aby obsluha přerušení zabrala co možná nejméně času. 
+	
+	Vykreslení funguje tak, že pouze pokud je nastaven příznak informující, že je potřeba překreslit \verb|update|, tak pouze tehdy proběhne překreslení. Jinak není prováděno nic. Pokud je překreslení potřeba, proběhne nejdříve vykreslení prvního řádku - položek menu. Potom se podle vybrané položky v menu vybere, který z detailů se má vykreslit. Displej je rovněž aktualizován, pokud proběhne změna na webovém rozhraní. 
+	
+	\subsection{Webové rozhraní} 
+	\label{web}
+	Webové rozhraní je realizováno jako jednoduchá webová stránka. Pomocí tlačítek a textových polí je možno upravovat nastavení rádia. Pro implementaci byla použita knihovna. Každý požadavek je předán třídě  \emph{menu} (viz \ref{menu}) pro aplikování nastavení a aktualizaci displeje. 
+	
+	\section{Implementační detaily}
+	Za účelem jednoduššího vývoje byla napsána jednoduchá protokolovací makra \verb|FATAL_ERROR|, \verb|ERROR| a \verb|loging|, která vypisují mimo zadané hlášky i řádek a funkci, ve které bylo toto makro zavoláno. Makro \verb|FATAL_ERROR| mimo to provede po vypsané hlášky i restart SOC. Při vývoji se zjistilo, že způsob protokolování je časově náročný, proto je možné jej vypnout. 
+	
+	Protokolování lze vypnout v souboru \texttt{settings.hpp}, kde se kromě možností pro vypnutí protokolování nachází také všechny konstanty používané v projektu pro jednoduché úpravy počátečního stavu radia.
+	
+	\subsection{Použité knihovny}
+	\begin{enumerate}
+		\item Adafruit\_SSD1306 - použita pro ovládaní displeje. Dostupná na \href{https://github.com/adafruit/Adafruit_SSD1306}{githubu}
+		\item Radio Library - použita pro ovládaní radia. Dostupná na \href{https://github.com/mathertel/Radio/tree/master}{githubu}
+	\end{enumerate}
+	
+	\section{ Demonstrační video }
+	k nalezení na youtube \href{https://youtu.be/VmVauFg2x14}{zde}
+	
+	
+	
+\end{document}
